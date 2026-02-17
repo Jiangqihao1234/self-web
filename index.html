@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>江启豪 | 个人学术主页</title>
+    <link rel="stylesheet" href="/self-web/styles.css" />
+  </head>
+  <body data-page="home">
+    <div class="bg-layer"></div>
+    <header class="site-header">
+      <div class="container nav-wrap">
+        <a class="brand" href="index.html">
+          <span class="brand-mark"></span>
+          <span id="brand-name">江启豪</span>
+        </a>
+        <nav class="nav">
+          <a data-nav="home" href="index.html">主页</a>
+          <a data-nav="research" href="research.html">研究</a>
+          <a data-nav="projects" href="projects.html">项目</a>
+        </nav>
+        <a class="btn btn-primary btn-sm" id="nav-contact" href="#">联系我</a>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="hero reveal" id="top">
+        <div class="hero-avatar">
+          <img id="hero-avatar" src="assets/avatar-placeholder.svg" alt="个人头像" />
+        </div>
+        <div class="hero-main">
+          <p class="eyebrow">个人学术主页</p>
+          <h1 id="hero-name-zh">江启豪</h1>
+          <p class="hero-subtitle" id="hero-name-en">Qihao Jiang</p>
+          <p class="hero-meta" id="hero-nationality">国籍：中国</p>
+          <p class="hero-tagline" id="hero-tagline"></p>
+          <div class="hero-actions" id="hero-actions"></div>
+        </div>
+      </section>
+
+      <section class="section reveal" id="research-area">
+        <div class="section-head">
+          <h2>研究方向</h2>
+          <p>以真实城市公园声景数据为基础，关注可解释和可复现的方法。</p>
+        </div>
+        <div id="research-cards" class="card-grid card-grid-3"></div>
+      </section>
+
+      <section class="section reveal" id="news">
+        <div class="section-head">
+          <h2>最近消息</h2>
+        </div>
+        <ul id="news-list" class="timeline"></ul>
+      </section>
+
+      <section class="section reveal" id="education">
+        <div class="section-head">
+          <h2>教育经历</h2>
+        </div>
+        <ul id="education-list" class="timeline"></ul>
+      </section>
+
+      <section class="section reveal" id="publications">
+        <div class="section-head">
+          <h2>论文与专利</h2>
+        </div>
+        <div id="publication-list" class="card-list"></div>
+      </section>
+
+      <section class="section reveal" id="awards">
+        <div class="section-head">
+          <h2>所获奖项</h2>
+        </div>
+        <ul id="award-list" class="simple-list"></ul>
+      </section>
+
+      <section class="section reveal" id="conference">
+        <div class="section-head">
+          <h2>会议经历</h2>
+        </div>
+        <div id="conference-list" class="accordion-list"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-wrap">
+        <p>联系邮箱：<a id="footer-email" href="#"></a></p>
+        <p class="footer-links" id="footer-links"></p>
+        <p id="footer-updated"></p>
+      </div>
+    </footer>
+
+    <script src="main.js"></script>
+  </body>
+</html>
