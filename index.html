@@ -695,7 +695,13 @@
               "p[style-name='标题 3'] => h3:fresh",
               "p[style-name='标题1'] => h1:fresh",
               "p[style-name='标题2'] => h2:fresh",
-              "p[style-name='标题3'] => h3:fresh"
+              "p[style-name='标题3'] => h3:fresh",
+              "p[style-name='1 级'] => h1:fresh",
+              "p[style-name='1级'] => h1:fresh",
+              "p[style-name='级别 1'] => h1:fresh",
+              "p[style-name='级别1'] => h1:fresh",
+              "p[style-name='大纲级别 1'] => h1:fresh",
+              "p[style-name='大纲级别1'] => h1:fresh"
             ],
             convertImage:mammoth.images.imgElement(image=>image.read("base64").then(base64=>({src:"data:"+image.contentType+";base64,"+base64})))
           };
@@ -750,7 +756,8 @@
 
         const level=getHeadingLevel(node,text);
         if(level===1){
-          currentType=extractType(text)||text||"其他";
+          const parsedType=extractType(text)||normalizeTypeText(text)||text||"其他";
+          currentType=ensureTypeExists(parsedType);
           currentSummary="";
           currentReference="";
           textBuffer=[];
@@ -771,10 +778,8 @@
         }
 
         const guessedType=extractType(text);
-        if(guessedType && !currentType){
-          currentType=guessedType;
-        }else if(guessedType && currentType==="其他" && text.length<=30){
-          currentType=guessedType;
+        if(guessedType && currentType==="其他"){
+          currentType=ensureTypeExists(guessedType);
         }
 
         if(looksLikeReference(text)){
@@ -800,6 +805,7 @@
       if(tag==="h1") return 1;
       if(tag==="h2") return 2;
       if(tag==="h3") return 3;
+      if(looksLikeLooseTypeHeading(text)) return 1;
       if(isTypeHeadingText(text)) return 1;
       return 0;
     }
@@ -808,21 +814,49 @@
       const t=clean(text);
       if(!t) return false;
       if(/^(结果图)?类型[：:]\s*.+$/.test(t)) return true;
+      if(looksLikeLooseTypeHeading(t)) return true;
       const types=allTypes();
       if(types.includes(t)) return true;
       return types.some(type=>t===("【"+type+"】") || t.startsWith(type+" "));
+    }
+
+    function normalizeTypeText(text){
+      let t=clean(text);
+      if(!t) return "";
+      t=t.replace(/^[•▪■◆●\-\*·]+\s*/,"").trim();
+      t=t.replace(/^[（(]?[一二三四五六七八九十0-9]+[)）.、]\s*/,"").trim();
+      const wrapped=t.match(/^【\s*(.+?)\s*】$/);
+      if(wrapped){t=clean(wrapped[1]);}
+      const explicit=t.match(/^(?:结果图)?类型[：:]\s*(.+)$/);
+      if(explicit){t=clean(explicit[1]);}
+      return t;
+    }
+
+    function looksLikeLooseTypeHeading(text){
+      const raw=clean(text);
+      if(!raw) return false;
+      if(/^【.+】$/.test(raw)) return false;
+      const t=normalizeTypeText(raw);
+      if(!t) return false;
+      if(looksLikeReference(t)) return false;
+      if(/[，,。；;]/.test(t)) return false;
+      if(t.length>28) return false;
+      if(/^(图|表)\s*\d+/i.test(t)) return false;
+      if(allTypes().includes(t)) return true;
+      return /(图|示意|流程|概括|框架|模型|结构|分布|网络)/.test(t);
     }
 
     function extractType(text){
       const t=clean(text);
       if(!t) return "";
       const matched=t.match(/^(?:结果图)?类型[：:]\s*(.+)$/);
-      const source=matched?clean(matched[1]):t;
+      const source=matched?clean(matched[1]):normalizeTypeText(t);
       const types=allTypes();
       for(const type of types){
         if(source===type || source.includes(type)) return type;
       }
       if(matched && source) return source;
+      if(looksLikeLooseTypeHeading(source)) return source;
       return "";
     }
 
