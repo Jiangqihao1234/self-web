@@ -208,10 +208,11 @@
     const sbClient=(window.supabase&&window.supabase.createClient)?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
     const DEFAULT_TYPES=["研究区域图","箱线图","散点图","折线图","柱状图","热图","PCA图","NMDS图","RDA/CCA图","物种组成图","稀释曲线","其他"];
     const CUSTOM_TYPES_KEY="eco_custom_types_v1";
-    const ADMIN_SESSION_KEY="eco_admin_session_v1";
-    const ADMIN_PASSWORD="EcoAdmin@2026";
+    const ADMIN_USERS_TABLE="admin_users";
+    const OTP_FUNCTION_URL=`${SUPABASE_URL}/functions/v1/admin-destructive-action`;
+    const OTP_TARGET_EMAIL="jiangqihao1234@gmail.com";
     let figures=[],activeFilter="all",detailId=null,pendingDocx=[],pendingImage="",isDocxImporting=false,isManualUploading=false;
-    let customTypes=[],isAdmin=false;
+    let customTypes=[],isAdmin=false,currentUser=null,authStateSubscription=null;
 
     window.addEventListener("error",function(e){
       const msg="脚本错误："+(e&&e.message?e.message:"未知错误");
@@ -228,12 +229,12 @@
     async function init(){
       try{
         loadCustomTypes();
-        restoreAdminSession();
         fillTypeSelect();
         bindEvents();
+        syncAdminUI();
+        await initAdminAuth();
         await loadData();
         renderAll();
-        syncAdminUI();
         if(sbClient){showToast("已连接 Supabase 云端存储");}
       }catch(err){
         const msg="初始化失败："+((err&&err.message)?err.message:"未知错误");
@@ -378,15 +379,58 @@
       showToast(alreadyExists?"该类型已存在，已自动选中":"已新增类型："+ensuredType);
     }
 
-    function restoreAdminSession(){
-      isAdmin=localStorage.getItem(ADMIN_SESSION_KEY)==="1";
+    async function initAdminAuth(){
+      if(!sbClient){
+        currentUser=null;
+        isAdmin=false;
+        return;
+      }
+      const {data,error}=await sbClient.auth.getSession();
+      if(error){
+        console.error(error);
+        currentUser=null;
+      }else{
+        currentUser=data&&data.session?data.session.user:null;
+      }
+      await refreshAdminState();
+      if(authStateSubscription&&authStateSubscription.unsubscribe){
+        authStateSubscription.unsubscribe();
+      }
+      const sub=sbClient.auth.onAuthStateChange(async(_,session)=>{
+        currentUser=session&&session.user?session.user:null;
+        await refreshAdminState();
+        syncAdminUI();
+      });
+      authStateSubscription=sub&&sub.data&&sub.data.subscription?sub.data.subscription:null;
+    }
+
+    async function refreshAdminState(){
+      if(!sbClient||!currentUser){
+        isAdmin=false;
+        return;
+      }
+      const {data,error}=await sbClient
+        .from(ADMIN_USERS_TABLE)
+        .select("user_id")
+        .eq("user_id",currentUser.id)
+        .maybeSingle();
+      if(error){
+        console.error(error);
+        isAdmin=false;
+        return;
+      }
+      isAdmin=!!(data&&data.user_id);
     }
 
     function syncAdminUI(){
       const text=document.getElementById("adminToggleText");
       const state=document.getElementById("adminStateText");
       if(text){text.textContent=isAdmin?"退出管理员":"管理员登录";}
-      if(state){state.textContent=isAdmin?"管理员模式":"访客模式";}
+      if(state){
+        state.textContent=isAdmin
+          ?("管理员模式"+(currentUser&&currentUser.email?(" · "+currentUser.email):""))
+          :"访客模式";
+      }
       const importBtn=document.getElementById("importJsonBtn");
       const clearBtn=document.getElementById("clearAllDataBtn");
       const delBtn=document.getElementById("deleteFigureBtn");
@@ -401,24 +445,86 @@
       node.style.display=visible?"inline-flex":"none";
     }
 
-    function toggleAdminMode(){
+    async function toggleAdminMode(){
+      if(!sbClient){
+        showToast("当前未连接 Supabase，无法管理员登录","error");
+        return;
+      }
       if(isAdmin){
+        const {error}=await sbClient.auth.signOut();
+        if(error){
+          showToast("退出失败："+(error.message||"未知错误"),"error");
+          return;
+        }
+        currentUser=null;
         isAdmin=false;
-        localStorage.removeItem(ADMIN_SESSION_KEY);
         syncAdminUI();
         showToast("已退出管理员模式");
         return;
       }
-      const pwd=prompt("请输入管理员口令");
-      if(pwd===null)return;
-      if(pwd!==ADMIN_PASSWORD){
-        showToast("管理员口令错误","error");
+      const email=clean(prompt("请输入管理员邮箱"));
+      if(!email)return;
+      const password=prompt("请输入管理员密码");
+      if(password===null||password==="")return;
+      const {error:loginError}=await sbClient.auth.signInWithPassword({email,password});
+      if(loginError){
+        showToast("登录失败："+(loginError.message||"未知错误"),"error");
         return;
       }
-      isAdmin=true;
-      localStorage.setItem(ADMIN_SESSION_KEY,"1");
+      const {data:sessionData,error:sessionError}=await sbClient.auth.getSession();
+      if(sessionError){
+        showToast("登录状态读取失败："+(sessionError.message||"未知错误"),"error");
+        return;
+      }
+      currentUser=sessionData&&sessionData.session?sessionData.session.user:null;
+      await refreshAdminState();
+      if(!isAdmin){
+        await sbClient.auth.signOut();
+        currentUser=null;
+        syncAdminUI();
+        showToast("该账号不是管理员账号","error");
+        return;
+      }
       syncAdminUI();
       showToast("管理员登录成功");
+    }
+
+    async function invokeAdminOtpFunction(payload){
+      if(!sbClient) throw new Error("未连接 Supabase");
+      const {data,error}=await sbClient.auth.getSession();
+      if(error||!data||!data.session||!data.session.access_token){
+        throw new Error("管理员登录已失效，请重新登录");
+      }
+      const resp=await fetch(OTP_FUNCTION_URL,{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "apikey":SUPABASE_ANON_KEY,
+          "Authorization":"Bearer "+data.session.access_token
+        },
+        body:JSON.stringify(payload||{})
+      });
+      let json={};
+      try{json=await resp.json();}catch(_){}
+      if(!resp.ok){
+        const msg=(json&&json.error)?json.error:("请求失败（"+resp.status+"）");
+        throw new Error(msg);
+      }
+      return json;
+    }
+
+    async function verifyDestructiveAction(action,extraPayload){
+      await refreshAdminState();
+      if(!isAdmin) throw new Error("仅管理员可执行此操作");
+      await invokeAdminOtpFunction({mode:"send",action});
+      const code=clean(prompt("验证码已发送至 "+OTP_TARGET_EMAIL+"，请输入 6 位验证码"));
+      if(!code) throw new Error("已取消操作");
+      return await invokeAdminOtpFunction({
+        mode:"verify_execute",
+        action,
+        code,
+        ...extraPayload
+      });
     }
 
     async function loadData(){
@@ -1042,25 +1148,16 @@
       if(!isAdmin){showToast("仅管理员可删除数据","error");return;}
       if(!detailId)return;
       if(!confirm("确认删除这张结果图吗？"))return;
-      const target=figures.find(v=>v.id===detailId);
-      if(sbClient){
-        const {error}=await sbClient.from(SUPABASE_TABLE).delete().eq("id",detailId);
-        if(error){
-          showToast("云端删除失败："+(error.message||"未知错误"),"error");
-          return;
-        }
-        if(target&&target.storagePath){
-          await deleteStoragePaths([target.storagePath]);
-        }
-      }else{
-        figures=figures.filter(v=>v.id!==detailId);
-        if(!await saveData())return;
+      try{
+        await verifyDestructiveAction("delete_one",{figureId:detailId});
+        await loadData();
+        renderAll();
+        closeDetailModal();
+        showToast("已删除");
+      }catch(err){
+        const msg=(err&&err.message)?err.message:"删除失败";
+        if(msg!=="已取消操作"){showToast(msg,"error");}
       }
-      figures=figures.filter(v=>v.id!==detailId);
-      localStorage.setItem(STORAGE_KEY,JSON.stringify(figures));
-      renderAll();
-      closeDetailModal();
-      showToast("已删除");
     }
     function copyDetailTitle(){
       const t=document.getElementById("detailTitle").textContent||"";
@@ -1117,25 +1214,21 @@
     async function clearAllData(){
       if(!isAdmin){showToast("仅管理员可清空数据","error");return;}
       if(!confirm("确认清空全部数据？该操作不可恢复。"))return;
-      if(sbClient){
-        const {error}=await sbClient.from(SUPABASE_TABLE).delete().neq("id","");
-        if(error){
-          showToast("云端清空失败："+(error.message||"未知错误"),"error");
-          return;
-        }
-        await deleteStoragePaths(figures.map(f=>f.storagePath));
-      }else{
+      try{
+        await verifyDestructiveAction("clear_all",{});
         figures=[];
-        if(!await saveData())return;
+        localStorage.setItem(STORAGE_KEY,"[]");
+        await loadData();
+        renderAll();
+        cancelDocxPreview();
+        pendingImage="";
+        document.getElementById("imagePreview").innerHTML="";
+        document.getElementById("imagePreview").classList.remove("active");
+        showToast("数据已清空");
+      }catch(err){
+        const msg=(err&&err.message)?err.message:"清空失败";
+        if(msg!=="已取消操作"){showToast(msg,"error");}
       }
-      figures=[];
-      localStorage.setItem(STORAGE_KEY,"[]");
-      renderAll();
-      cancelDocxPreview();
-      pendingImage="";
-      document.getElementById("imagePreview").innerHTML="";
-      document.getElementById("imagePreview").classList.remove("active");
-      showToast("数据已清空");
     }
 
     function gid(){return "fig_"+Date.now()+"_"+Math.random().toString(36).slice(2,8);}
